@@ -1,0 +1,109 @@
+version: '3.3'
+services:
+  backend:
+    user: laravel
+    build:
+      args:
+        - UID=${UID:-1000}
+        - GID=${GID:-1000}
+      context: .
+      dockerfile: _docker/backend/Dockerfile
+    volumes:
+      - ./backend/:/var/www
+      - ./_docker/nginx/php.ini:/usr/local/etc/php/conf.d/php.ini
+    container_name: project_app
+    networks:
+      - app-network
+
+  frontend:
+    stdin_open: true
+    container_name: frontend
+    build:
+      context: .
+      dockerfile: _docker/frontend/Dockerfile
+    volumes:
+      - ./frontend/:/var/www
+      - /app/node_modules
+    networks:
+      - app-network
+
+  #Nginx Service
+  webserver:
+    depends_on:
+      - backend
+      - frontend
+    build:
+      context: .
+      dockerfile: _docker/nginx/Dockerfile
+    container_name: webserver
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "80:80"
+    networks:
+      - app-network
+  db:
+    image: mariadb
+    restart: unless-stopped
+    volumes:
+      - database:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MARIADB_DATABASE: lardocker
+      MARIADB_USER: root
+      MARIADB_PASSWORD: root # для .env
+      MARIADB_ROOT_PASSWORD: root # Для входу в адмінку
+    networks:
+      - app-network
+  phpmyadmin:
+    restart: unless-stopped
+    image: phpmyadmin/phpmyadmin
+    container_name: project_phpmyadmin
+    depends_on:
+      - db
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306
+      PMA_ABSOLUTE_URI: "http://localhost/phpmyadmin/"
+      MYSQL_ROOT_PASSWORD: root
+    networks:
+      - app-network
+  redis:
+    restart: unless-stopped
+    image: redis
+    hostname: redis
+    container_name: project_redis
+    links:
+      - redis-commander
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: [ "redis-server", "/usr/local/etc/redis/redis.conf","--bind", "project_redis" ]
+    volumes:
+      - redis-data:/data
+      - ./_docker/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    networks:
+      - app-network
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    hostname: redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "${REDIS_PORT:-6379}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-root}"
+      HTTP_USER: root
+      HTTP_PASSWORD: root
+    container_name: project_commander
+    ports:
+      - "127.0.0.1:8081:8081"
+    networks:
+      - app-network
+
+
+networks:
+  app-network:
+    driver: bridge
+volumes:
+  database:
+  redis-data:
